@@ -121,8 +121,9 @@ function col(u,v,z){ const x=u-UOFF,y=v-VOFF; if(rampD(u,v)===0) return COL.asph
   if(x>=PAD.a&&x<=PAD.c&&y<=PAD.d&&y>=PAD.b&&zAt(u,v)-z>0.03) return COL.pave;
   if(zAt(u,v)-z>0.06) return COL.earth; return cls(u,v); }
 const PU0=-9.5,PU1=14.5,PV0=-1,PV1=26,PS=0.125;
+const terrMeshes=[];
 function meshFrom(pos,cl,idx){ const ge=new THREE.BufferGeometry(); ge.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); ge.setAttribute('color',new THREE.Float32BufferAttribute(cl,3)); ge.setIndex(idx); ge.computeVertexNormals();
-  const me=new THREE.Mesh(ge,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide})); me.receiveShadow=true; groups.site.add(me); }
+  const me=new THREE.Mesh(ge,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide})); me.receiveShadow=true; groups.site.add(me); terrMeshes.push(me); return me; }
 { const pos=[],cl=[],idx=[]; for(let j=0;j<NV;j++)for(let i=0;i<NU;i++){ const u=U0+i*DU,v=V0+j*DU,[a,b]=S2T(u,v),c=cls(u,v); pos.push(a,TR.E[j*NU+i]/100-ABS0,b); cl.push(c.r,c.g,c.b); }
   for(let j=0;j<NV-1;j++)for(let i=0;i<NU-1;i++){ const u=U0+i*DU,v=V0+j*DU; if(u>=PU0-1e-6&&u+DU<=PU1+1e-6&&v>=PV0-1e-6&&v+DU<=PV1+1e-6) continue; const a=j*NU+i,b=a+1,d=a+NU,e=d+1; idx.push(a,d,b,b,d,e); }
   meshFrom(pos,cl,idx); }
@@ -130,15 +131,10 @@ function meshFrom(pos,cl,idx){ const ge=new THREE.BufferGeometry(); ge.setAttrib
   for(let j=0;j<=nJ;j++)for(let i=0;i<=nI;i++){ const u=PU0+i*PS,v=PV0+j*PS,z=zT(u,v),[a,b]=S2T(u,v),c=col(u,v,z); pos.push(a,z-ABS0,b); cl.push(c.r,c.g,c.b); }
   for(let j=0;j<nJ;j++)for(let i=0;i<nI;i++){ const u=PU0+(i+.5)*PS,v=PV0+(j+.5)*PS; const [x,y]=[u-UOFF,v-VOFF]; if(inFoot(x,y)) continue; const a=j*V+i,b=a+1,d=a+V,e=d+1; idx.push(a,d,b,b,d,e); }
   meshFrom(pos,cl,idx); }
-// postojeći teren (originalna kota terena, providni sloj za poređenje sa izmenjenim terenom)
-const exTerr=new THREE.Group(); scene.add(exTerr);
-{ const nI=Math.round((PU1-PU0)/PS),nJ=Math.round((PV1-PV0)/PS),pos=[],idx=[],V=(nI+1);
-  for(let j=0;j<=nJ;j++)for(let i=0;i<=nI;i++){ const u=PU0+i*PS,v=PV0+j*PS,[a,b]=S2T(u,v); pos.push(a,zAt(u,v)-ABS0,b); }
-  for(let j=0;j<nJ;j++)for(let i=0;i<nI;i++){ const a=j*V+i,b=a+1,d=a+V,e=d+1; idx.push(a,d,b,b,d,e); }
-  const ge=new THREE.BufferGeometry(); ge.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); ge.setIndex(idx); ge.computeVertexNormals();
-  const me=new THREE.Mesh(ge,new THREE.MeshBasicMaterial({color:0xe08a2e,transparent:true,opacity:0.38,side:THREE.DoubleSide,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})); exTerr.add(me);
-  const wf=new THREE.LineSegments(new THREE.WireframeGeometry(ge),new THREE.LineBasicMaterial({color:0x8a4b0f,transparent:true,opacity:0.18})); exTerr.add(wf); }
-exTerr.visible=false;
+// postojeći (originalni) teren, ceo, bez izmena – prikaz se uključuje dugmetom
+const EXM=(()=>{ const pos=[],cl=[],idx=[]; for(let j=0;j<NV;j++)for(let i=0;i<NU;i++){ const u=U0+i*DU,v=V0+j*DU,[a,b]=S2T(u,v),c=cls(u,v); pos.push(a,TR.E[j*NU+i]/100-ABS0,b); cl.push(c.r,c.g,c.b); }
+  for(let j=0;j<NV-1;j++)for(let i=0;i<NU-1;i++){ const a=j*NU+i,b=a+1,d=a+NU,e=d+1; idx.push(a,d,b,b,d,e); }
+  const m=meshFrom(pos,cl,idx); terrMeshes.pop(); m.visible=false; return m; })();
 // izohipse (postojeće, samo gde teren nije izmenjen)
 { const thin=new THREE.LineBasicMaterial({color:0x3e4a35,transparent:true,opacity:.35}), thick=new THREE.LineBasicMaterial({color:0x2c3526,transparent:true,opacity:.75});
   for(const cl of TR.cE){ const whole=Math.abs(cl.z-Math.round(cl.z))<0.01, pos=[]; const P=cl.p.map(([u,v])=>{ const z=zT(u,v); return {u,v,z,ok:Math.abs(z-zAt(u,v))<0.04}; });
@@ -178,7 +174,7 @@ let cut='all', showRoof=true, showFurn=true, showNames=true, showEx=false, walki
 function applyAll(){ const c=CUTS.find(x=>x[0]===cut), cy=c[2];
   scene.traverse(o=>{ if(o.isMesh){ const mats=Array.isArray(o.material)?o.material:[o.material]; mats.forEach(mm=>{mm.clippingPlanes=cy===null?null:[clip];}); } });
   if(cy!==null) clip.constant=cy;
-  groups.roof.visible=showRoof&&cy===null; groups.f.visible=showFurn; groups.ch.visible=true; exTerr.visible=showEx&&!walking;
+  groups.roof.visible=showRoof&&cy===null; groups.f.visible=showFurn; groups.ch.visible=true; terrMeshes.forEach(t=>t.visible=!showEx); EXM.visible=showEx;
   labs.forEach(l=>{ l.o.visible=showNames&&!walking&&cut!=='all'&&l.lv===cut; });
   document.querySelectorAll('#cuts button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.k===cut));
   document.querySelectorAll('#opts button').forEach(b=>b.setAttribute('aria-pressed',String({roof:showRoof,furn:showFurn,names:showNames,terr:showEx}[b.dataset.k]))); }
